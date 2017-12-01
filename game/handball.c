@@ -9,14 +9,24 @@
 #define GREEN_LED BIT6
 
 int paddlePos = 0;
+int screen = 0;
+int button;
 
 AbRect paddleRect = {abRectGetBounds, abRectCheck, {20, 3}}; /**< 10x10 rectangle */
 
 AbRectOutline fieldOutline = {	/* playing field */
   abRectOutlineGetBounds, abRectOutlineCheck,   
-  {screenWidth/2 - 3, screenHeight/2 - 1}
+  {screenWidth/2 - 1, screenHeight/2 - 1}
 };
-  
+
+Layer home = {
+  (AbShape *) &fieldOutline,
+  {screenWidth / 2, screenHeight / 2},
+  {0, 0}, {0, 0},
+  COLOR_ORANGE,
+  0
+};
+
 Layer fieldLayer = {		/* playing field as a layer */
   (AbShape *) &fieldOutline,
   {screenWidth/2, screenHeight/2},/**< center */
@@ -25,20 +35,20 @@ Layer fieldLayer = {		/* playing field as a layer */
   0
 };
 
-Layer ball = {		/**< Layer with an orange circle */
-  (AbShape *)&circle2,
-  {(screenWidth/2), (screenHeight/2)}, /**< bit below & right of center */
-  {0,0}, {0,0},				    /* last & next pos */
-  COLOR_BLACK,
-  &fieldLayer
-};
-
 Layer paddle = {
   (AbShape *)&paddleRect,
   {(screenWidth/2), 156},
   {0,0}, {0,0},
   COLOR_RED,
-  &ball
+  &fieldLayer
+};
+
+Layer ball = {		/**< Layer with an orange circle */
+  (AbShape *)&circle2,
+  {(screenWidth/2), (screenHeight/2)}, /**< bit below & right of center */
+  {0,0}, {0,0},				    /* last & next pos */
+  COLOR_BLACK,
+  &paddle
 };
 
 /** Moving Layer
@@ -52,8 +62,9 @@ typedef struct MovLayer_s{
 } MovLayer;
 
 /* initial value of {0,0} will be overwritten */
-MovLayer movBall = {&ball, {3, 3}, 0}; /**< not all layers move */
 MovLayer movPaddle = {&paddle, {1, 1}, 0};
+MovLayer movBall = {&ball, {3, 3}, 0};
+
 
 void movLayerDraw(MovLayer *movLayers, Layer *layers){
   int row, col;
@@ -111,9 +122,45 @@ void mlAdvance(MovLayer *ml, Region *fence){
   } /**< for ml */
 }
 
-u_int bgColor = COLOR_BLUE;     /**< The background color */
-int redrawScreen = 1;           /**< Boolean for whether screen needs to be redrawn */
+/*Function for the main screen*/
+void mainScreen(){
+  drawString5x7(40, 3, "HANDBALL", COLOR_BLACK, COLOR_GREEN);
+  drawString5x7(47, 30, "PRESS", COLOR_BLACK, COLOR_GREEN);
+  drawString5x7(37, 50, "S2 OR S3", COLOR_BLACK, COLOR_GREEN);
+  drawString5x7(43, 70, "BUTTON", COLOR_BLACK, COLOR_GREEN);
+  drawString5x7(25, 90, "TO START GAME", COLOR_BLACK, COLOR_GREEN);
 
+  if(!(BIT1 & button) || !(BIT2 & button)){
+    clearScreen(COLOR_GREEN);
+    layerDraw(&ball);
+    screen = 1;
+  }
+}
+
+/*Function to move the paddle.*/
+void movePaddle(int button){
+  //Move the paddle to the next position.
+  movPaddle.layer->posNext.axes[0] = movPaddle.layer->pos.axes[0] + paddlePos;
+  if(!(BIT0 & button)){             //Move left when S1 is pressed.
+    if(movPaddle.layer->pos.axes[0] >= 25)
+      paddlePos = -10;
+    else
+      paddlePos = 0;
+  } else{                            //Move right when S4 is pressed.
+    if(!(BIT3 & button)){
+    if(movPaddle.layer->pos.axes[0] <= 100)
+      paddlePos = 10;
+    else
+      paddlePos = 0;
+  } else
+      paddlePos = 0;
+  }
+  //Redraw the screen.
+  movLayerDraw(&movPaddle, &paddle);
+}
+
+u_int bgColor = COLOR_GREEN;     /**< The background color */
+int redrawScreen = 1;           /**< Boolean for whether screen needs to be redrawn */
 Region fieldFence;		/**< fence around playing field  */
 
 /** Initializes everything, enables interrupts and green LED, 
@@ -128,22 +175,31 @@ void main(){
   
   p2sw_init(BIT0 + BIT1 + BIT2 + BIT3);
 
-  layerInit(&paddle);
-  layerDraw(&paddle);
+  clearScreen(COLOR_TAN);
+
+  layerInit(&ball);
+  layerDraw(&home);
 
   layerGetBounds(&fieldLayer, &fieldFence);
+  
 
   enableWDTInterrupts();      /**< enable periodic interrupt */
   or_sr(0x8);	              /**< GIE (enable interrupts) */
 
-  for(;;){ 
-    while (!redrawScreen){ /**< Pause CPU if screen doesn't need updating */
-      P1OUT &= ~GREEN_LED;    /**< Green led off witHo CPU */
-      or_sr(0x10);	      /**< CPU OFF */
+  for(;;){
+    button  = p2sw_read();
+    if(screen == 0)
+      mainScreen();
+    else{
+      while(!redrawScreen){ /**< Pause CPU if screen doesn't need updating */
+	P1OUT &= ~GREEN_LED;    /**< Green led off witHo CPU */
+	or_sr(0x10);	      /**< CPU OFF */
+      }
+      P1OUT |= GREEN_LED;       /**< Green led on when CPU on */
+      redrawScreen = 0;
+      movLayerDraw(&movBall, &ball);
+      movePaddle(button);
     }
-    P1OUT |= GREEN_LED;       /**< Green led on when CPU on */
-    redrawScreen = 0;
-    movLayerDraw(&movBall, &paddle);
   }
 }
 
@@ -152,9 +208,9 @@ void wdt_c_handler(){
   static short count = 0;
   P1OUT |= GREEN_LED;		      /**< Green LED on when cpu on */
   count ++;
-  if (count == 10) {
+  if(count == 20){
     mlAdvance(&movBall, &fieldFence);
-    if (p2sw_read())
+    if(p2sw_read())
       redrawScreen = 1;
     count = 0;
   } 
