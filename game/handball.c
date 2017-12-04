@@ -1,3 +1,6 @@
+/*References:
+ *           Dr. Freudenthal code
+*/
 #include <msp430.h>
 #include <libTimer.h>
 #include <lcdutils.h>
@@ -8,18 +11,20 @@
 
 #define GREEN_LED BIT6
 
-int paddlePos = 0;
-int screen = 0;
-int button;
+int paddlePos = 0;        //For the position of the paddle.
+int screen = 0;           //For the screen to display.
+int button;               //For the buttons.
+int gameOverFlag = 0;     //For clearing the screen only once.
+char score = '0';         //For the score of the game.
 
-AbRect paddleRect = {abRectGetBounds, abRectCheck, {20, 3}}; /**< 10x10 rectangle */
+AbRect paddleRect = {abRectGetBounds, abRectCheck, {20, 3}}; /*20x3 rectangle */
 
 AbRectOutline fieldOutline = {	/* playing field */
   abRectOutlineGetBounds, abRectOutlineCheck,   
   {screenWidth/2 - 1, screenHeight/2 - 1}
 };
 
-Layer home = {
+Layer home = {                /*Layer for the main screen*/
   (AbShape *) &fieldOutline,
   {screenWidth / 2, screenHeight / 2},
   {0, 0}, {0, 0},
@@ -27,15 +32,15 @@ Layer home = {
   0
 };
 
-Layer fieldLayer = {		/* playing field as a layer */
+Layer fieldLayer = {		/*playing field as a layer*/
   (AbShape *) &fieldOutline,
-  {screenWidth/2, screenHeight/2},/**< center */
-  {0,0}, {0,0},				    /* last & next pos */
+  {screenWidth/2, screenHeight/2},          /*center*/
+  {0,0}, {0,0},				    /*last & next pos*/
   COLOR_WHITE,
   0
 };
 
-Layer paddle = {
+Layer paddle = {          /*Layer for the paddle.*/
   (AbShape *)&paddleRect,
   {(screenWidth/2), 156},
   {0,0}, {0,0},
@@ -43,9 +48,9 @@ Layer paddle = {
   &fieldLayer
 };
 
-Layer ball = {		/**< Layer with an orange circle */
+Layer ball = {		/*Layer with an black ball*/
   (AbShape *)&circle2,
-  {(screenWidth/2), (screenHeight/2)}, /**< bit below & right of center */
+  {(screenWidth/2), (screenHeight/2)}, /**Right in the center.*/
   {0,0}, {0,0},				    /* last & next pos */
   COLOR_BLACK,
   &paddle
@@ -98,7 +103,7 @@ void movLayerDraw(MovLayer *movLayers, Layer *layers){
       } // for col
     } // for row
   } // for moving layer being updated
-}	  
+}
 
 /** Advances a moving shape within a fence
  *  
@@ -114,8 +119,22 @@ void mlAdvance(MovLayer *ml, Region *fence){
     abShapeGetBounds(ml->layer->abShape, &newPos, &shapeBoundary);
     for (axis = 0; axis < 2; axis ++){
       if((shapeBoundary.topLeft.axes[axis] < fence->topLeft.axes[axis]) || (shapeBoundary.botRight.axes[axis] > fence->botRight.axes[axis])){
-	int velocity = ml->velocity.axes[axis] = -ml->velocity.axes[axis];
-	newPos.axes[axis] += (2*velocity);
+	fieldLayer.pos.axes[1] += 50;             //For checking the bottom fence.
+	//Check if the ball hit the bottom fence.
+	if(abRectCheck(&fieldOutline, &(fieldLayer.pos), &(ml->layer->pos)) && axis == 1){
+	  screen = 2;
+	} else{
+	  int velocity = ml->velocity.axes[axis] = -ml->velocity.axes[axis];
+	  newPos.axes[axis] += (2*velocity);
+	}
+	fieldLayer.pos.axes[1] -= 50;
+	//Check if the ball hit the paddle.
+	if(abRectCheck(&paddleRect, &(paddle.pos), &(ml->layer->pos)) && axis == 1){
+	  int velocity = ml->velocity.axes[axis] = -ml->velocity.axes[axis];
+	  newPos.axes[axis] += (2*velocity);
+	  score++;
+	  screen = 1;
+	}
       }	/**< if outside of fence */
     } /**< for axis */
     ml->layer->posNext = newPos;
@@ -129,12 +148,35 @@ void mainScreen(){
   drawString5x7(37, 50, "S2 OR S3", COLOR_BLACK, COLOR_GREEN);
   drawString5x7(43, 70, "BUTTON", COLOR_BLACK, COLOR_GREEN);
   drawString5x7(25, 90, "TO START GAME", COLOR_BLACK, COLOR_GREEN);
-
+  //Detect any of the center button to start the game.
   if(!(BIT1 & button) || !(BIT2 & button)){
     clearScreen(COLOR_GREEN);
     layerDraw(&ball);
     screen = 1;
   }
+}
+/*Function for when the game is over.*/
+void gameOver(){
+  if(gameOverFlag == 0){       //Only clear the screen one time.
+    clearScreen(COLOR_GREEN);
+    gameOverFlag++;
+  }
+  drawString5x7(40, 2, "Game Over", COLOR_BLACK, COLOR_GREEN);
+  drawString5x7(43, 17, "SCORE:", COLOR_BLACK, COLOR_GREEN);
+  drawString5x7(81, 17, &score, COLOR_BLACK, COLOR_GREEN);
+  drawString5x7(41, screenHeight / 2, "PRESS ANY", COLOR_BLACK, COLOR_GREEN);
+  drawString5x7(42, (screenHeight / 2) + 15, "BUTTON TO", COLOR_BLACK, COLOR_GREEN);
+  drawString5x7(52, (screenHeight / 2) + 30, "RESET", COLOR_BLACK, COLOR_GREEN);
+  //Detect if any of the buttons is pressed to reset the game.
+  if (!(BIT0 & button) || !(BIT1 & button) || !(BIT2 & button) || !(BIT3 & button)){
+      clearScreen(0);
+      screen = 0;
+      gameOverFlag = 0;
+      score = '0';                                 //Reset score.
+      ball.posNext.axes[0] = screenWidth / 2;      //Reset the ball's x-coordinate.
+      ball.posNext.axes[1] = screenHeight / 2;     //Reset the ball's y-coordinate.
+      layerDraw(&home);
+    }
 }
 
 /*Function to move the paddle.*/
@@ -172,17 +214,12 @@ void main(){
 
   configureClocks();
   lcd_init();
-  
   p2sw_init(BIT0 + BIT1 + BIT2 + BIT3);
-
   clearScreen(COLOR_TAN);
-
   layerInit(&ball);
   layerDraw(&home);
-
   layerGetBounds(&fieldLayer, &fieldFence);
   
-
   enableWDTInterrupts();      /**< enable periodic interrupt */
   or_sr(0x8);	              /**< GIE (enable interrupts) */
 
@@ -190,6 +227,8 @@ void main(){
     button  = p2sw_read();
     if(screen == 0)
       mainScreen();
+    else if(screen == 2)
+      gameOver();
     else{
       while(!redrawScreen){ /**< Pause CPU if screen doesn't need updating */
 	P1OUT &= ~GREEN_LED;    /**< Green led off witHo CPU */
@@ -197,8 +236,14 @@ void main(){
       }
       P1OUT |= GREEN_LED;       /**< Green led on when CPU on */
       redrawScreen = 0;
-      movLayerDraw(&movBall, &ball);
+      drawString5x7(2, 3, "SCORE:", COLOR_RED, COLOR_GREEN);
+      drawString5x7(40, 3, &score, COLOR_RED, COLOR_GREEN);
       movePaddle(button);
+      movLayerDraw(&movBall, &ball);
+      //Game finished at 9.
+      if(score == '9'){
+	screen = 2;
+      }
     }
   }
 }
@@ -209,7 +254,8 @@ void wdt_c_handler(){
   P1OUT |= GREEN_LED;		      /**< Green LED on when cpu on */
   count ++;
   if(count == 20){
-    mlAdvance(&movBall, &fieldFence);
+    if(screen == 1)
+      mlAdvance(&movBall, &fieldFence);
     if(p2sw_read())
       redrawScreen = 1;
     count = 0;
