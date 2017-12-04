@@ -15,7 +15,21 @@ int paddlePos = 0;        //For the position of the paddle.
 int screen = 0;           //For the screen to display.
 int button;               //For the buttons.
 int gameOverFlag = 0;     //For clearing the screen only once.
+long count = 0;
 char score = '0';         //For the score of the game.
+
+void buzzerInit(){
+  timerAUpmode();
+  P2SEL &= ~(BIT6 | BIT7);
+  P2SEL &= ~BIT7;
+  P2SEL |= BIT6;
+  P2DIR = BIT6;
+}
+
+void buzzer_set_period(short cycles){
+  CCR0 = cycles;
+  CCR1 = cycles >> 1;		/* one half cycle */
+}
 
 AbRect paddleRect = {abRectGetBounds, abRectCheck, {20, 3}}; /*20x3 rectangle */
 
@@ -126,14 +140,22 @@ void mlAdvance(MovLayer *ml, Region *fence){
 	} else{
 	  int velocity = ml->velocity.axes[axis] = -ml->velocity.axes[axis];
 	  newPos.axes[axis] += (2*velocity);
+	  buzzer_set_period(1500);
+	  while(++count < 25000){}
+	  buzzer_set_period(0);
+	  count = 0;
 	}
 	fieldLayer.pos.axes[1] -= 50;
 	//Check if the ball hit the paddle.
 	if(abRectCheck(&paddleRect, &(paddle.pos), &(ml->layer->pos)) && axis == 1){
 	  int velocity = ml->velocity.axes[axis] = -ml->velocity.axes[axis];
 	  newPos.axes[axis] += (2*velocity);
-	  score++;
+	  score = addScore();
 	  screen = 1;
+	  buzzer_set_period(3800);
+	  while(++count < 25000){}
+	  buzzer_set_period(0);
+	  count = 0;
 	}
       }	/**< if outside of fence */
     } /**< for axis */
@@ -157,7 +179,11 @@ void mainScreen(){
 }
 /*Function for when the game is over.*/
 void gameOver(){
-  if(gameOverFlag == 0){       //Only clear the screen one time.
+  if(gameOverFlag == 0){       //Only clear the screen and play the sound one time.
+    buzzer_set_period(9000);
+    while(++count < 800000){}
+    buzzer_set_period(0);
+    count = 0;
     clearScreen(COLOR_GREEN);
     gameOverFlag++;
   }
@@ -172,7 +198,7 @@ void gameOver(){
       clearScreen(0);
       screen = 0;
       gameOverFlag = 0;
-      score = '0';                                 //Reset score.
+      score = resetScore();                                 //Reset score.
       ball.posNext.axes[0] = screenWidth / 2;      //Reset the ball's x-coordinate.
       ball.posNext.axes[1] = screenHeight / 2;     //Reset the ball's y-coordinate.
       layerDraw(&home);
@@ -215,6 +241,7 @@ void main(){
   configureClocks();
   lcd_init();
   p2sw_init(BIT0 + BIT1 + BIT2 + BIT3);
+  buzzerInit();
   clearScreen(COLOR_TAN);
   layerInit(&ball);
   layerDraw(&home);

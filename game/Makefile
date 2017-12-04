@@ -10,11 +10,11 @@ AS              = msp430-elf-gcc -mmcu=${CPU} -c
 all:shapemotion.elf
 
 #additional rules for files
-shapemotion.elf: ${COMMON_OBJECTS} handball.o wdt_handler.o
+shapemotion.elf: ${COMMON_OBJECTS} handball.o wdt_handler.o addScore.o 
 	${CC} ${CFLAGS} ${LDFLAGS} -o $@ $^ -lTimer -lLcd -lShape -lCircle -lp2sw
 
 load: shapemotion.elf
 	mspdebug rf2500 "prog $^"
 
 clean:
-	rm -f *.o *.elf *.c~ *~
+	rm -f *.o *.elf *.c~ *~ *.s~
