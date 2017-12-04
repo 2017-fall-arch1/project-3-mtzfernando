@@ -8,6 +8,7 @@
 #include <p2switches.h>
 #include <shape.h>
 #include <abCircle.h>
+#include "buzzer.h"
 
 #define GREEN_LED BIT6
 
@@ -17,19 +18,6 @@ int button;               //For the buttons.
 int gameOverFlag = 0;     //For clearing the screen only once.
 long count = 0;
 char score = '0';         //For the score of the game.
-
-void buzzerInit(){
-  timerAUpmode();
-  P2SEL &= ~(BIT6 | BIT7);
-  P2SEL &= ~BIT7;
-  P2SEL |= BIT6;
-  P2DIR = BIT6;
-}
-
-void buzzer_set_period(short cycles){
-  CCR0 = cycles;
-  CCR1 = cycles >> 1;		/* one half cycle */
-}
 
 AbRect paddleRect = {abRectGetBounds, abRectCheck, {20, 3}}; /*20x3 rectangle */
 
@@ -84,7 +72,6 @@ typedef struct MovLayer_s{
 MovLayer movPaddle = {&paddle, {1, 1}, 0};
 MovLayer movBall = {&ball, {3, 3}, 0};
 
-
 void movLayerDraw(MovLayer *movLayers, Layer *layers){
   int row, col;
   MovLayer *movLayer;
@@ -133,7 +120,7 @@ void mlAdvance(MovLayer *ml, Region *fence){
     abShapeGetBounds(ml->layer->abShape, &newPos, &shapeBoundary);
     for (axis = 0; axis < 2; axis ++){
       if((shapeBoundary.topLeft.axes[axis] < fence->topLeft.axes[axis]) || (shapeBoundary.botRight.axes[axis] > fence->botRight.axes[axis])){
-	fieldLayer.pos.axes[1] += 50;             //For checking the bottom fence.
+	fieldLayer.pos.axes[1] += 10;             //For checking the bottom fence.
 	//Check if the ball hit the bottom fence.
 	if(abRectCheck(&fieldOutline, &(fieldLayer.pos), &(ml->layer->pos)) && axis == 1){
 	  screen = 2;
@@ -145,13 +132,14 @@ void mlAdvance(MovLayer *ml, Region *fence){
 	  buzzer_set_period(0);
 	  count = 0;
 	}
-	fieldLayer.pos.axes[1] -= 50;
+	fieldLayer.pos.axes[1] -= 10;
 	//Check if the ball hit the paddle.
 	if(abRectCheck(&paddleRect, &(paddle.pos), &(ml->layer->pos)) && axis == 1){
 	  int velocity = ml->velocity.axes[axis] = -ml->velocity.axes[axis];
 	  newPos.axes[axis] += (2*velocity);
 	  score = addScore();
-	  screen = 1;
+	  screen = 1;   //Stay on the same screen.
+	  //Play sound.
 	  buzzer_set_period(3800);
 	  while(++count < 25000){}
 	  buzzer_set_period(0);
@@ -228,8 +216,8 @@ void movePaddle(int button){
 }
 
 u_int bgColor = COLOR_GREEN;     /**< The background color */
-int redrawScreen = 1;           /**< Boolean for whether screen needs to be redrawn */
-Region fieldFence;		/**< fence around playing field  */
+int redrawScreen = 1;            /**< Boolean for whether screen needs to be redrawn */
+Region fieldFence;		 /**< fence around playing field  */
 
 /** Initializes everything, enables interrupts and green LED, 
  *  and handles the rendering for the screen
@@ -267,7 +255,7 @@ void main(){
       drawString5x7(40, 3, &score, COLOR_RED, COLOR_GREEN);
       movePaddle(button);
       movLayerDraw(&movBall, &ball);
-      //Game finished at 9.
+      //Game finishes at 9.
       if(score == '9'){
 	screen = 2;
       }
