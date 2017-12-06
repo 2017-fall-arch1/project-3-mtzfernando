@@ -9,6 +9,7 @@
 #include <shape.h>
 #include <abCircle.h>
 #include "buzzer.h"
+#include "selectScreen.h"
 
 #define GREEN_LED BIT6
 
@@ -16,6 +17,7 @@ int paddlePos = 0;        //For the position of the paddle.
 int screen = 0;           //For the screen to display.
 int button;               //For the buttons.
 int gameOverFlag = 0;     //For clearing the screen only once.
+int play = 0;
 long count = 0;
 char score = '0';         //For the score of the game.
 
@@ -124,6 +126,7 @@ void mlAdvance(MovLayer *ml, Region *fence){
 	//Check if the ball hit the bottom fence.
 	if(abRectCheck(&fieldOutline, &(fieldLayer.pos), &(ml->layer->pos)) && axis == 1){
 	  screen = 2;
+	  play = 0;
 	} else{
 	  int velocity = ml->velocity.axes[axis] = -ml->velocity.axes[axis];
 	  newPos.axes[axis] += (2*velocity);
@@ -137,8 +140,9 @@ void mlAdvance(MovLayer *ml, Region *fence){
 	if(abRectCheck(&paddleRect, &(paddle.pos), &(ml->layer->pos)) && axis == 1){
 	  int velocity = ml->velocity.axes[axis] = -ml->velocity.axes[axis];
 	  newPos.axes[axis] += (2*velocity);
-	  score = addScore();
+	  score++;
 	  screen = 1;   //Stay on the same screen.
+	  play = 1;
 	  //Play sound.
 	  buzzer_set_period(3800);
 	  while(++count < 25000){}
@@ -163,8 +167,10 @@ void mainScreen(){
     clearScreen(COLOR_GREEN);
     layerDraw(&ball);
     screen = 1;
+    play = 1;
   }
 }
+
 /*Function for when the game is over.*/
 void gameOver(){
   if(gameOverFlag == 0){       //Only clear the screen and play the sound one time.
@@ -185,8 +191,9 @@ void gameOver(){
   if (!(BIT0 & button) || !(BIT1 & button) || !(BIT2 & button) || !(BIT3 & button)){
       clearScreen(0);
       screen = 0;
+      play = 0;
       gameOverFlag = 0;
-      score = resetScore();                                 //Reset score.
+      score = '0';                        //Reset score.
       ball.posNext.axes[0] = screenWidth / 2;      //Reset the ball's x-coordinate.
       ball.posNext.axes[1] = screenHeight / 2;     //Reset the ball's y-coordinate.
       layerDraw(&home);
@@ -219,6 +226,25 @@ u_int bgColor = COLOR_GREEN;     /**< The background color */
 int redrawScreen = 1;            /**< Boolean for whether screen needs to be redrawn */
 Region fieldFence;		 /**< fence around playing field  */
 
+/*Function for playing the game.*/
+void playGame(){
+  while(!redrawScreen){ /**< Pause CPU if screen doesn't need updating */
+    P1OUT &= ~GREEN_LED;    /**< Green led off witHo CPU */
+    or_sr(0x10);	      /**< CPU OFF */
+  }
+  P1OUT |= GREEN_LED;       /**< Green led on when CPU on */
+  redrawScreen = 0;
+  drawString5x7(2, 3, "SCORE:", COLOR_RED, COLOR_GREEN);
+  drawString5x7(40, 3, &score, COLOR_RED, COLOR_GREEN);
+  movePaddle(button);
+  movLayerDraw(&movBall, &ball);
+  //Game finishes at 9.
+  if(score == '9'){
+    screen = 2;
+    play = 0;
+  }
+}
+
 /** Initializes everything, enables interrupts and green LED, 
  *  and handles the rendering for the screen
  */
@@ -240,25 +266,10 @@ void main(){
 
   for(;;){
     button  = p2sw_read();
-    if(screen == 0)
-      mainScreen();
-    else if(screen == 2)
-      gameOver();
+    if(play == 0)
+      selectScreen();
     else{
-      while(!redrawScreen){ /**< Pause CPU if screen doesn't need updating */
-	P1OUT &= ~GREEN_LED;    /**< Green led off witHo CPU */
-	or_sr(0x10);	      /**< CPU OFF */
-      }
-      P1OUT |= GREEN_LED;       /**< Green led on when CPU on */
-      redrawScreen = 0;
-      drawString5x7(2, 3, "SCORE:", COLOR_RED, COLOR_GREEN);
-      drawString5x7(40, 3, &score, COLOR_RED, COLOR_GREEN);
-      movePaddle(button);
-      movLayerDraw(&movBall, &ball);
-      //Game finishes at 9.
-      if(score == '9'){
-	screen = 2;
-      }
+      playGame();
     }
   }
 }
@@ -269,7 +280,7 @@ void wdt_c_handler(){
   P1OUT |= GREEN_LED;		      /**< Green LED on when cpu on */
   count ++;
   if(count == 20){
-    if(screen == 1)
+    if(play == 1)
       mlAdvance(&movBall, &fieldFence);
     if(p2sw_read())
       redrawScreen = 1;
